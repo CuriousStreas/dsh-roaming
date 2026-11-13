@@ -1,0 +1,14 @@
+# dsh-roaming bundle patch
+#
+# 只有一条挂载行：本包装进 profile（`dsh.profile.bundles` 或 profile 的
+# cordis.patch.yml）后，loader 会按这里的 id/name 挂载插件实例。
+# 想改配置就再写一条 override，例如：
+#
+#   - override:
+#       - id: roaming
+#         config:
+#           repoUrl: https://github.com/<you>/<repo>.git
+#           verbose: false
+- insert:
+    - id: roaming
+      name: dsh-roaming
