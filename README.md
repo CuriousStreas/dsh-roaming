@@ -66,7 +66,7 @@ dsh plugin add "file:D:/path/to/dsh-roaming"
 | `repoUrl` | - | 远程仓库地址（也可运行时 configure） |
 | `home` | `$DSH_HOME` / `~/.dsh` | DSH 根目录 |
 | `mnemonHome` | `~/.mnemon` | mnemon 记忆目录 |
-| `syncDir` | `process.cwd()` | pull 导入的会话落到哪个工作区 |
+| `syncRoot` | `<home>/roaming/workspaces` | 同步工作区根目录；每个主机一个子文件夹（`<syncRoot>/<host>`），子文件夹名即工作区标题。也支持 `syncDir`（旧名） |
 | `verbose` | `true` | 是否打印日志 |
 
 ## 设计取舍（阶段 1）
