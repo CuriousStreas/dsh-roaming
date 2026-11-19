@@ -68,6 +68,17 @@ test('preview clone stays shallow and only fast-forwards, never merges local div
   assert.equal(fs.existsSync(path.join(local, 'local.txt')), true)
 })
 
+test('preview does not accept a removed remote branch using stale tracking HEAD', async (t) => {
+  const { root, remote, local } = fixture(t)
+  const writer = seed(root, remote)
+  const repo = new GitRepo({ dir: local, remoteUrl: remote })
+  await repo.ensurePreviewRepo()
+  const branch = git(writer, 'branch', '--show-current')
+  git(root, '--git-dir', remote, 'symbolic-ref', 'HEAD', 'refs/heads/placeholder')
+  git(writer, 'push', 'origin', '--delete', branch)
+  await assert.rejects(repo.previewPull(), /preview remote branch unavailable/)
+})
+
 test('preview refuses modified, untracked and ignored worktree content', async (t) => {
   const { root, remote, local } = fixture(t)
   seed(root, remote)
