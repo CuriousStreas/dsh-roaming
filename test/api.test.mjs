@@ -31,7 +31,7 @@ function fixture({ reject = false } = {}) {
     assert.ok(body)
     return { status, body }
   }
-  return { home, request, writes, dispose: () => fs.rmSync(home, { recursive: true, force: true }) }
+  return { home, request, handler: registered, writes, dispose: () => fs.rmSync(home, { recursive: true, force: true }) }
 }
 
 test('unsafe commands reject before touching native session persistence', async () => {
@@ -44,6 +44,25 @@ test('unsafe commands reject before touching native session persistence', async 
     }
     const local = await h.request('listLocal')
     assert.deepEqual(local.body.sessions, [])
+    assert.equal(h.writes.open + h.writes.create, 0)
+  } finally { h.dispose() }
+})
+
+test('oversized request returns 413 without destroying response or parsing trailing data', async () => {
+  const h = fixture()
+  try {
+    let status, response, destroyed = false
+    const listeners = {}
+    const req = { method: 'POST', url: '/roaming/api', on(name, callback) { listeners[name] = callback; return this }, destroy() { destroyed = true } }
+    const res = { writeHead(code) { status = code }, end(data) { response = JSON.parse(data) } }
+    h.handler(req, res)
+    listeners.data(Buffer.alloc(4 * 1024 * 1024 + 1))
+    listeners.data(Buffer.from('{"action":"push"}'))
+    listeners.end()
+    for (let i = 0; response === undefined && i < 20; i++) await new Promise((done) => setImmediate(done))
+    assert.equal(status, 413)
+    assert.equal(response.error.code, 'too-large')
+    assert.equal(destroyed, false)
     assert.equal(h.writes.open + h.writes.create, 0)
   } finally { h.dispose() }
 })
