@@ -48,6 +48,22 @@ test('legacy mirror and state remain unread and unchanged', async () => {
   } finally { h.cleanup() }
 })
 
+test('diagnostics never follow a plugin log symlink or unsafe root', async () => {
+  const h = harness()
+  try {
+    const root = path.join(h.home, 'roaming', 'v3')
+    fs.mkdirSync(root, { recursive: true })
+    const victim = path.join(h.home, 'unrelated.txt')
+    fs.writeFileSync(victim, 'unaltered')
+    try { fs.symlinkSync(victim, path.join(root, 'debug.log'), 'file') }
+    catch (error) { if (error.code === 'EPERM') return; throw error }
+    fs.writeFileSync(path.join(root, 'state.json'), '{bad')
+    apply(h.ctx, { home: h.home })
+    assert.equal(fs.readFileSync(victim, 'utf8'), 'unaltered')
+    assert.equal(h.calls.write, 0)
+  } finally { h.cleanup() }
+})
+
 test('malformed v3 state fails closed instead of resetting bindings', async () => {
   const h = harness()
   try {
