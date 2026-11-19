@@ -14,7 +14,7 @@
 - 人工确认一条会话后分配稳定的 64 位十六进制 conversation key；每机器记录其 own local ID 和 `native-readonly` / `roaming-owned` 身份，不把设备名称/文件后缀当主键。默认本机会话均不入选。
 - 仓库 `SCHEMA_VERSION=3`，带 manifest：`conversations/<key> -> {head,parent}`。payload 用内容 SHA-256 寻址，zstd 仅限 Git 数据镜像。变更需要确认 `expected === 当前 head` 且 Git 更新可快进；远端确认后才提交本地基线。空基线不能猜单边变更。
 - 老插件不识别 v3 marker，因此**新仓库不要给旧版本插件写权限**；单靠文本版本文件不能隔离旧写入者。验证迁移用临时 repo/profile/工作区，不能在日常 GUI 内安装验证。
-- 本地 DSH 原始会话永不因同步被迁移、重写、重命名；接续只在被验证为漫游拥有的新副本上做，并先确认 DSH 对此导入格式能回放与继续。不可安全接续时只保留可浏览的仓库数据。
+- 本地 DSH 原始会话永不因同步被迁移、重写、重命名。当前 DSH 的公开 `session/fork` 只接受已存在本地的 session ID；公开 `/api/session.export` 可导出根日志、子会话与引用附件，但没有发现对等的任意 ZIP 导入 API。旧版手写 `create/append` 导入不能证明引用、marker、历史版本与附件可回放。因此跨机导入/续聊继续关闭，直到找到受支持的导入路径，或在独立 profile 对严格受限格式完成往返验证；没有安全接续能力时只保留可浏览的仓库数据。
 
 ## 放行检查
 
