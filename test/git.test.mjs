@@ -38,6 +38,35 @@ function seed(root, remote, name = 'seed') {
   return writer
 }
 
+test('preview clone stays shallow and only fast-forwards, never merges local divergence', async (t) => {
+  const { root, remote, local } = fixture(t)
+  const writer = seed(root, remote)
+  for (let n = 0; n < 3; n++) {
+    fs.writeFileSync(path.join(writer, 'remote.txt'), `revision ${n}\n`)
+    git(writer, 'add', '-A')
+    git(writer, '-c', 'user.name=fixture', '-c', 'user.email=fixture@localhost', 'commit', '-m', `update ${n}`)
+    git(writer, 'push')
+  }
+  const repo = new GitRepo({ dir: local, remoteUrl: remote })
+  assert.equal(await repo.ensurePreviewRepo(), 'cloned')
+  assert.equal(git(local, 'rev-parse', '--is-shallow-repository'), 'true')
+  assert.equal(git(local, 'rev-list', '--count', 'HEAD'), '1')
+  fs.writeFileSync(path.join(writer, 'remote.txt'), 'new revision\n')
+  git(writer, 'add', '-A')
+  git(writer, '-c', 'user.name=fixture', '-c', 'user.email=fixture@localhost', 'commit', '-m', 'latest')
+  git(writer, 'push')
+  assert.equal(await repo.previewPull(), 'pulled')
+  assert.equal(git(local, 'rev-parse', 'HEAD'), git(writer, 'rev-parse', 'HEAD'))
+  fs.writeFileSync(path.join(local, 'local.txt'), 'unpublished')
+  await repo.commitAll('local divergence')
+  fs.writeFileSync(path.join(writer, 'remote.txt'), 'different revision\n')
+  git(writer, 'add', '-A')
+  git(writer, '-c', 'user.name=fixture', '-c', 'user.email=fixture@localhost', 'commit', '-m', 'conflicting')
+  git(writer, 'push')
+  await assert.rejects(repo.previewPull(), /preview pull failed/)
+  assert.equal(fs.existsSync(path.join(local, 'local.txt')), true)
+})
+
 test('post-transfer quota rejects oversized mirror without representing remote as fresh', async (t) => {
   const { root, remote, local } = fixture(t)
   const writer = seed(root, remote)
