@@ -18,6 +18,7 @@ const [{ Context }, Jsonl, { Session, SessionId }, { createUserMessage }] = awai
 ])
 const home = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-roaming-native-fixture-'))
 let fiber
+let targetFiber
 try {
   const ctx = new Context()
   fiber = ctx.plugin(Jsonl, { root: path.join(home, 'session-logs'), compression: 'none' })
@@ -70,8 +71,31 @@ try {
     assert.deepEqual(replay.deriveMessages(), expectedSurface)
     assert.deepEqual(result.events.map((event) => event.seq), [0, 1, 2, 3, 4, 5])
     assert.equal(read.header.id, id)
-    console.log(JSON.stringify({ isolated: true, syntheticEvents: result.events.length, restoredEvents: replay.seq }))
   } finally { await read.close() }
+  // Explicitly restricted fixture only: use the same synthetic ID in a second,
+  // independently rooted backend. This is not plugin import or agent resume.
+  const targetCtx = new Context()
+  targetFiber = targetCtx.plugin(Jsonl, { root: path.join(home, 'target-session-logs'), compression: 'none' })
+  await targetFiber.await()
+  const target = targetCtx.sessionPersistence
+  assert.equal(await target.stat(id), undefined)
+  const targetWrite = await target.create(extracted.snapshot.header)
+  try {
+    await targetWrite.append(extracted.snapshot.events)
+    await targetWrite.flush()
+  } finally { await targetWrite.close() }
+  await assert.rejects(target.create(extracted.snapshot.header))
+  const targetRead = await target.open(id, 'read')
+  try {
+    const { events: targetEvents, eventState } = await targetRead.read()
+    assert.deepEqual(targetEvents, extracted.snapshot.events)
+    const imported = Session.fromRestore(id, targetEvents, targetRead.header, targetRead.inheritedEventCount, eventState)
+    assert.deepEqual(imported.deriveMessages(), expectedSurface)
+  } finally { await targetRead.close() }
+  assert.equal((await db.stat(id)).revision, before.revision)
+  console.log(JSON.stringify({ isolated: true, syntheticEvents: events.length, restoredEvents: fromSnapshot.seq, targetImported: true }))
 } finally {
-  try { await fiber?.dispose() } finally { await fs.rm(home, { recursive: true, force: true }) }
+  try { await targetFiber?.dispose() } finally {
+    try { await fiber?.dispose() } finally { await fs.rm(home, { recursive: true, force: true }) }
+  }
 }
