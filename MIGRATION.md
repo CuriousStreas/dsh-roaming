@@ -20,7 +20,7 @@
 
 - 只能在新建 disposable `DSH_HOME` / 数据仓库中实验，源 profile 不能依靠 `open('write')` 或 `flush` 获取快照；原生会话导出必须显式授权单条 ID，并单独记录 `inheritedEventCount`、依赖会话及所有可验证的附件引用。
 - 对每个受限 fixture，先界定原始 SessionHeader / event seq / 内嵌引用与媒体摘要；完整校验后才尝试目标 profile 的 `create/append/flush`，中途失败须保留源字节、隔离目标、不向日常 GUI 注册。复开、回放、续聊、再次导出内容等价才可扩大支持格式；未知插件负载、非静止树或无法保持图片摘要一律拒绝。
-- 当前 Git 事务适配器仍在本地镜像上原地提交；远端拒绝推送会留下未确认提交。不得自动 reset/pull/merge 或伪报成功，必须改为独立 staging 仓库与可恢复事务，并封锁意外 push URL、目录软链接竞争及超大 Git 历史，再谈接入 API。
+- Git 写入只能在独立 staging 仓库进行；现有离线测试验证远端拒绝推送后原本地镜像保持原样、移除拒绝条件后可重试，同时拒绝被配置成其他目标的 pushurl/URL 重写。不得 reset/pull/merge 或伪报成功；仍需验证进程崩溃竞态、目录软链接竞争、超大 Git 历史及实际远端拒绝，再谈接入 API。
 
 ## 放行检查
 

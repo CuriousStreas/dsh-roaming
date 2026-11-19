@@ -34,9 +34,9 @@ function begin(state, bytes) {
   assert.equal(committed.status, 'local-committed')
   return committed.state
 }
-function finish(state, receipt, mirror) {
-  const verifiedManifest = JSON.parse(fs.readFileSync(path.join(mirror, 'manifest.json'), 'utf8'))
-  return acknowledgePublication(state, { key, receipt, remoteManifest: verifiedManifest })
+async function finish(state, receipt, repo) {
+  const observation = await observeRemoteArtifact({ repo, key })
+  return acknowledgePublication(state, { key, receipt, remoteManifest: observation.manifest })
 }
 
 test('A publishes one explicitly enrolled artifact; B fetches same logical key and A rejects stale branch', async (t) => {
@@ -46,7 +46,7 @@ test('A publishes one explicitly enrolled artifact; B fetches same logical key a
   let staged = begin(A, first)
   assert.equal(staged.ledger.bindings[key].base, null)
   const receipt = await publishArtifact({ repo: f.repoA, key, expected: null, expectedManifestHead: manifestRevision(A.manifest), artifact: first })
-  staged = finish(staged, receipt, f.dir('A'))
+  staged = await finish(staged, receipt, f.repoA)
   assert.equal(staged.ledger.bindings[key].base, digest(first))
   A = staged
 
@@ -66,8 +66,9 @@ test('A publishes one explicitly enrolled artifact; B fetches same logical key a
   assert.equal(commitPublication(preparePublication(B, { key, bytes: divergent, observedManifest: manifestB }), { key, observedManifest: manifestB }).status, 'local-committed')
   const aSecond = Buffer.from('same conversation rev 2 from A')
   const commitA = begin(A, aSecond)
+  await f.repoA.pull()
   const second = await publishArtifact({ repo: f.repoA, key, expected: receipt.head, expectedManifestHead: receipt.manifestHead, artifact: aSecond })
-  const A2 = finish(commitA, second, f.dir('A'))
+  const A2 = await finish(commitA, second, f.repoA)
   assert.equal(A2.ledger.bindings[key].base, second.head)
   await assert.rejects(publishArtifact({ repo: f.repoB, key, expected: receipt.head, expectedManifestHead: receipt.manifestHead, artifact: divergent }), /diverged/)
 })
