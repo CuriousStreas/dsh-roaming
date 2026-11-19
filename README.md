@@ -8,11 +8,11 @@
 
 | 当前可以 | 当前禁止 |
 |---|---|
-| 列出本机会话元数据；克隆或拉取**隔离的 v3 数据镜像**，展示经 SHA-256 校验的旧仓库会话条目和错误清单 | 上传、导入、追加原生会话、修改 DSH 工作区或模型、记忆文件覆盖、自动同步、迁移旧版状态 |
+| 克隆或拉取**隔离的 v3 数据镜像**，展示经 SHA-256 校验的仓库会话条目和错误清单 | 扫描原生会话、上传、导入、追加、修改 DSH 工作区或模型、记忆文件覆盖、自动同步、迁移旧版状态 |
 
 新状态在 `<DSH_HOME>/roaming/v3/`，完全不复用旧 `<DSH_HOME>/roaming/state.json` 或 `repo/`。启动时不自动网络访问。配置仓库时要求 clone 成功、原仓库 origin 与配置匹配；拉取失败不能用旧镜像冒充最新数据。仓库 `SCHEMA_VERSION` 是 roaming 数据协议版本，不是 DSH 会话版本；**预览旧版数据不表示允许写入**。
 
-`POST /roaming/api` 的 `status`、`listLocal`、`configure`、`pull`、`syncAll`（当前仅预览）、`openLogs` 可用。`push`、`pushMemory`、`pullMemory`、`pushConfig` 明确返回 `preview-only`；`settings` 不能打开自动同步。API 必须由 DSH connection 服务验证身份，缺失时拒绝请求；安装前仍需完成真实 Host 的 API 路由及隔离端到端测试。
+`POST /roaming/api` 的 `status`、`listLocal`（空列表）、`configure`、`pull`、`syncAll`（当前仅预览）、`openLogs` 可用。`push`、`pushMemory`、`pullMemory`、`pushConfig` 明确返回 `preview-only`；`settings` 不能打开自动同步。API 必须由 DSH connection 服务验证身份，缺失时拒绝请求；安装前仍需完成真实 Host 的 API 路由及隔离端到端测试。
 
 ## 重构路线与迁移闸门
 
@@ -22,7 +22,7 @@
 4. Git 拉取/推送和远端确认状态分开记录。记忆迁移走独立安全协议，不直接覆盖 Mnemon 运行态文件。
 5. 双机隔离测试包括未授权会话不上传、等长内容冲突、断网/推送拒绝、坏压缩包、历史会话、重复导入、活跃会话与附件；通过后才讨论安装到日常 profile。
 
-迁移边界与验收细则见 [MIGRATION.md](./MIGRATION.md)。测试（仅临时目录，不连接用户仓库）：`node test/safety.test.mjs`、`node test/api.test.mjs`、`node test/revisions.test.mjs`、`node test/ledger.test.mjs`、`node test/manifest.test.mjs`、`node test/git.test.mjs`。Git fixture 在受限 sandbox 无法建立 signal pipe，需在允许运行本地 Git 的隔离环境执行。当前 ledger/manifest 是离线协议核心，**尚未连入 API，也不能据此声称已完成双机同步**。
+迁移边界与验收细则见 [MIGRATION.md](./MIGRATION.md)。测试（仅临时目录，不连接用户仓库）：`node test/safety.test.mjs`、`node test/api.test.mjs`、`node test/revisions.test.mjs`、`node test/ledger.test.mjs`、`node test/manifest.test.mjs`、`node test/publisher.test.mjs`、`node test/git.test.mjs`、`node test/transport.test.mjs`。Git fixture 在受限 sandbox 无法建立 signal pipe，需在允许运行本地 Git 的隔离环境执行。当前 ledger/manifest/publisher/transport 是离线协议核心，**尚未连入 API，也不能据此声称已完成双机同步**。其中 transport 只接受新仓库的 schema=3 标记，不会升级旧仓库。
 
 ## License
 
