@@ -92,8 +92,19 @@ try {
     const imported = Session.fromRestore(id, targetEvents, targetRead.header, targetRead.inheritedEventCount, eventState)
     assert.deepEqual(imported.deriveMessages(), expectedSurface)
   } finally { await targetRead.close() }
+  // A partial native write is *not* transactional. Verify its observable
+  // failure mode under an isolated ID: never assume close rolls back append.
+  const incompleteId = SessionId(`partial-${crypto.randomUUID()}`)
+  const partialHeader = { ...extracted.snapshot.header, id: incompleteId }
+  const partial = await target.create(partialHeader)
+  try {
+    await partial.append(extracted.snapshot.events.slice(0, 2))
+    await partial.flush()
+  } finally { await partial.close() }
+  const incomplete = await target.stat(incompleteId)
+  assert.ok(incomplete, 'partial flush materializes a native session')
   assert.equal((await db.stat(id)).revision, before.revision)
-  console.log(JSON.stringify({ isolated: true, syntheticEvents: events.length, restoredEvents: fromSnapshot.seq, targetImported: true }))
+  console.log(JSON.stringify({ isolated: true, syntheticEvents: events.length, restoredEvents: fromSnapshot.seq, targetImported: true, partialWriteVisible: true }))
 } finally {
   try { await targetFiber?.dispose() } finally {
     try { await fiber?.dispose() } finally { await fs.rm(home, { recursive: true, force: true }) }
