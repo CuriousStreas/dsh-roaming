@@ -4,12 +4,12 @@ import path from 'node:path'
 import test from 'node:test'
 import { apply } from '../lib/index.js'
 
-function fixture() {
+function fixture({ reject = false } = {}) {
   const home = fs.mkdtempSync(path.join(process.cwd(), '.dsh-roaming-api-'))
   let registered
   const writes = { open: 0, create: 0 }
   const ctx = {
-    get: (name) => name === 'connection' ? { requestRejection: () => undefined } : undefined,
+    get: (name) => name === 'connection' ? { requestRejection: () => reject ? 401 : undefined } : undefined,
     sessionPersistence: { open: () => { writes.open++; throw Error('native access') }, create: () => { writes.create++; throw Error('native access') } },
     webServer: { register: (spec) => { registered = spec.handler; return () => {} } },
     effect: (factory) => factory(),
@@ -45,6 +45,19 @@ test('unsafe commands reject before touching native session persistence', async 
     const local = await h.request('listLocal')
     assert.deepEqual(local.body.sessions, [])
     assert.equal(h.writes.open + h.writes.create, 0)
+  } finally { h.dispose() }
+})
+
+test('rejected browser identity cannot create state or open native sessions', async () => {
+  const h = fixture({ reject: true })
+  try {
+    for (const action of ['status', 'configure', 'syncAll', 'push']) {
+      const response = await h.request(action, { repoUrl: 'git@github.com:owner/private.git' })
+      assert.equal(response.status, 403)
+      assert.equal(response.body.error.code, 'forbidden')
+    }
+    assert.equal(h.writes.open + h.writes.create, 0)
+    assert.equal(fs.existsSync(path.join(h.home, 'roaming', 'v3')), false)
   } finally { h.dispose() }
 })
 
