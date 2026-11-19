@@ -42,9 +42,19 @@ try {
   ])
   const key = crypto.randomBytes(32).toString('hex')
   const ledger = enroll(createLedger('synthetic-device'), { key, localId: id })
+  const before = await db.stat(id)
   const extracted = await readEnrolledSnapshot({ persistence: db, ledger, key })
   assert.equal(extracted.snapshot.events.length, events.length)
   assert.equal(extracted.snapshot.header.id, id)
+  const fromSnapshot = Session.fromRestore(id, extracted.snapshot.events, extracted.snapshot.header, extracted.snapshot.inheritedEventCount, 'detached')
+  assert.equal(fromSnapshot.seq, events.length)
+  // An unbound key must not even call the backend. This also demonstrates
+  // that validation is not a permission to discover other native sessions.
+  await assert.rejects(readEnrolledSnapshot({ persistence: {
+    stat() { throw new Error('forbidden stat') }, open() { throw new Error('forbidden open') },
+  }, ledger, key: crypto.randomBytes(32).toString('hex') }), /enrollment/)
+  const after = await db.stat(id)
+  assert.equal(after.revision, before.revision)
   const read = await db.open(id, 'read')
   try {
     const result = await read.read()
