@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   createPublication, enrollPublication, preparePublication, commitPublication,
-  acknowledgePublication, manifestRevision, putObject, readObject,
+  acknowledgePublication, manifestRevision, putObject, readObject, OBJECT_LIMITS,
 } from '../lib/publisher.js'
 import { digest } from '../lib/revisions.js'
 
@@ -37,6 +37,61 @@ test('objects are immutable byte snapshots and digest validated', () => {
   assert.equal(putObject(store, bytes('content')).store, store)
   assert.equal(readObject(store, digest('absent')), null)
   assert.throws(() => putObject({ [revision]: 'bm90LWNvbnRlbnQ=' }, bytes('content')), /corrupt immutable object/)
+})
+
+test('object quotas reject oversized input and encoded input before decoding', () => {
+  const empty = createPublication({ deviceId: 'A' }).objects
+  assert.throws(() => putObject(empty, Buffer.alloc(OBJECT_LIMITS.objectBytes + 1)), /byte quota/)
+  const revision = digest('small')
+  const oversized = { [revision]: 'A'.repeat(Math.ceil(OBJECT_LIMITS.objectBytes / 3) * 4 + 4) }
+  assert.throws(() => createPublication({ deviceId: 'A', objects: oversized }), /byte quota/)
+  assert.throws(() => readObject(oversized, revision), /byte quota/)
+  assert.throws(() => putObject(oversized, bytes('valid')), /byte quota/)
+  assert.throws(() => createPublication({ deviceId: 'A', objects: { [revision]: '%%%=' } }), /encoding/)
+  assert.throws(() => createPublication({ deviceId: 'A', objects: { [revision]: 'c21hbGw' } }), /encoding/)
+  assert.throws(() => createPublication({ deviceId: 'A', objects: { notASha: 'YQ==' } }), /revision/)
+  assert.throws(() => createPublication({ deviceId: 'A', objects: [] }), /invalid object store/)
+  assert.throws(() => createPublication({ deviceId: 'A', objects: Object.defineProperty({}, revision, { get() { throw new Error('must not run getter') }, enumerable: true }) }), /encoding/)
+  const source = { [digest('safe')]: bytes('safe').toString('base64') }
+  const imported = createPublication({ deviceId: 'A', objects: source })
+  source[digest('safe')] = '%%%='
+  assert.equal(readObject(imported.objects, digest('safe')).toString(), 'safe')
+})
+
+test('store count and aggregate decoded byte quotas are enforced on import and insertion', () => {
+  let store = createPublication({ deviceId: 'A' }).objects
+  for (let i = 0; i < OBJECT_LIMITS.objectCount; i++) store = putObject(store, Buffer.from(`item-${i}`)).store
+  assert.equal(putObject(store, bytes('item-0')).store, store)
+  assert.throws(() => putObject(store, bytes('one-more')), /count quota/)
+  const extra = putObject(createPublication({ deviceId: 'A' }).objects, bytes('one-more'))
+  assert.throws(() => createPublication({ deviceId: 'A', objects: { ...store, [extra.revision]: 'b25lLW1vcmU=' } }), /count quota/)
+  let large = createPublication({ deviceId: 'A' }).objects
+  for (let i = 0; i < OBJECT_LIMITS.totalBytes / OBJECT_LIMITS.objectBytes; i++) {
+    const data = Buffer.alloc(OBJECT_LIMITS.objectBytes, i)
+    large = putObject(large, data).store
+  }
+  assert.throws(() => putObject(large, bytes('overflow')), /total byte quota/)
+  const overflow = putObject(createPublication({ deviceId: 'A' }).objects, bytes('overflow'))
+  assert.throws(() => createPublication({ deviceId: 'A', objects: { ...large, [overflow.revision]: 'b3ZlcmZsb3c=' } }), /total byte quota/)
+})
+
+test('persisted pending state recovers before commit or after push without asserting remote verification', () => {
+  const enrolled = enrollDevice('A')
+  const staged = prepare(enrolled, 'snapshot')
+  const revive = (state) => createPublication(JSON.parse(JSON.stringify(state)))
+  const recoveredPrepared = revive(staged)
+  assert.deepEqual(recoveredPrepared.pending, staged.pending)
+  const committed = commit(recoveredPrepared).state
+  const recoveredCommitted = revive(committed)
+  assert.equal(recoveredCommitted.ledger.bindings[key].base, null)
+  assert.equal(recoveredCommitted.ledger.bindings[key].owner, 'native-readonly')
+  assert.equal(commit(recoveredCommitted).status, 'local-committed')
+  assert.throws(() => confirm(staged), /no locally committed/)
+  assert.throws(() => acknowledgePublication(recoveredCommitted, { key, receipt: { remoteAccepted: false, head: committed.pending.revision, manifestHead: committed.pending.committedManifest }, remoteManifest: committed.manifest }), /acknowledgement/)
+  assert.equal(confirm(recoveredCommitted).ledger.bindings[key].base, committed.pending.revision)
+  assert.throws(() => revive({ ...staged, objects: {} }), /invalid persisted pending/)
+  assert.throws(() => revive({ ...committed, pending: { ...committed.pending, committedManifest: digest('wrong') } }), /invalid persisted pending/)
+  assert.throws(() => revive({ ...committed, manifest: staged.manifest }), /invalid persisted pending/)
 })
 
 test('local commit remains pending until exact verified remote manifest acknowledgement', () => {

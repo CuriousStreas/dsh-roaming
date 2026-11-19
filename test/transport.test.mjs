@@ -6,7 +6,7 @@ import path from 'node:path'
 import { GitRepo } from '../lib/git.js'
 import { newManifest } from '../lib/manifest.js'
 import { digest } from '../lib/revisions.js'
-import { MAX_ARTIFACT_BYTES, publishArtifact } from '../lib/transport.js'
+import { MAX_ARTIFACT_BYTES, publishArtifact, verifyPublishedArtifact } from '../lib/transport.js'
 import { manifestRevision } from '../lib/publisher.js'
 
 const key = 'a'.repeat(64)
@@ -41,6 +41,7 @@ function options(f, artifact = Buffer.from('immutable artifact'), expected = nul
 test('publishes immutable artifact with independently verified remote manifest and revision', async (t) => {
   const f = fixture(t)
   const receipt = await publishArtifact(options(f))
+  assert.deepEqual(await verifyPublishedArtifact({ repo: f.repo, key, expected: null, artifact: Buffer.from('immutable artifact') }), receipt)
   assert.deepEqual(receipt, { remoteAccepted: true, head: digest('immutable artifact'), manifestHead: manifestRevision(JSON.parse(fs.readFileSync(path.join(f.local, 'manifest.json'), 'utf8'))) })
   const verifier = path.join(f.root, 'verifier')
   git(f.root, 'clone', f.remote, verifier)
