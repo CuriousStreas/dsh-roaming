@@ -12,7 +12,7 @@
 
 新状态在 `<DSH_HOME>/roaming/v3/`，完全不复用旧 `<DSH_HOME>/roaming/state.json` 或 `repo/`。启动时不自动网络访问。配置仓库时要求 clone 成功、原仓库 origin 与配置匹配；拉取失败不能用旧镜像冒充最新数据。仓库 `SCHEMA_VERSION` 是 roaming 数据协议版本，不是 DSH 会话版本；**预览旧版数据不表示允许写入**。
 
-`POST /roaming/api` 的 `status`、`listLocal`、`configure`、`pull`、`syncAll`（当前仅预览）、`openLogs` 可用。`push`、`pushMemory`、`pullMemory`、`pushConfig` 明确返回 `preview-only`；`settings` 不能打开自动同步。安装前还需完成 API 身份验证及隔离端到端测试。
+`POST /roaming/api` 的 `status`、`listLocal`、`configure`、`pull`、`syncAll`（当前仅预览）、`openLogs` 可用。`push`、`pushMemory`、`pullMemory`、`pushConfig` 明确返回 `preview-only`；`settings` 不能打开自动同步。API 必须由 DSH connection 服务验证身份，缺失时拒绝请求；安装前仍需完成真实 Host 的 API 路由及隔离端到端测试。
 
 ## 重构路线与迁移闸门
 
