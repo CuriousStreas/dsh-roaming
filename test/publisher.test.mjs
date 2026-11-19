@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   createPublication, enrollPublication, preparePublication, commitPublication,
-  acknowledgePublication, manifestRevision, putObject, readObject, OBJECT_LIMITS,
+  acknowledgePublication, acknowledgeObservedEquality, manifestRevision, putObject, readObject, OBJECT_LIMITS,
 } from '../lib/publisher.js'
 import { digest } from '../lib/revisions.js'
 
@@ -140,6 +140,47 @@ test('two devices with checked ancestry: continuation, stale manifest and confli
   assert.deepEqual(retryConflict, firstConflict)
   assert.equal(divergent.ledger.bindings[key].base, null)
   assert.equal(divergent.manifest.conversations[key].head, digest('common'))
+})
+
+test('verified equality reconciles stale baseline without a commit', () => {
+  let state = enrollDevice('same')
+  const first = commit(prepare(state, 'base')).state
+  state = confirm(first)
+  const equal = bytes('converged')
+  const head = digest(equal)
+  const manifest = { schema: 3, conversations: { [key]: { parent: digest('base'), head } } }
+  state = createPublication({ ledger: state.ledger, manifest, objects: putObject(state.objects, equal).store })
+  const observation = { manifest, manifestHead: manifestRevision(manifest), head, object: equal }
+  const prepared = preparePublication(state, { key, bytes: equal, observedManifest: manifest })
+  assert.equal(commitPublication(prepared, { key, observedManifest: manifest }).status, 'unchanged')
+  assert.equal(prepared.ledger.bindings[key].base, digest('base'))
+  assert.throws(() => acknowledgeObservedEquality(prepared, { key, localBytes: bytes('forged'), observation }), /objects differ/)
+  assert.throws(() => acknowledgeObservedEquality(prepared, { key, localBytes: equal, observation: { ...observation, object: bytes('forged') } }), /objects differ/)
+  assert.throws(() => acknowledgeObservedEquality(prepared, { key, localBytes: equal, observation: { ...observation, manifestHead: digest('forged') } }), /manifest/)
+  const reconciled = acknowledgeObservedEquality(prepared, { key, localBytes: equal, observation })
+  assert.equal(reconciled.ledger.bindings[key].base, head)
+  assert.equal(reconciled.pending, null)
+  assert.equal(acknowledgeObservedEquality(reconciled, { key, localBytes: equal, observation }).ledger.bindings[key].base, head)
+  assert.equal(commit(prepare(reconciled, 'next')).status, 'local-committed')
+})
+
+test('unbound equal revision requires full observed manifest and immutable local object', () => {
+  const data = bytes('identical initial content')
+  const head = digest(data)
+  const manifest = { schema: 3, conversations: { [key]: { parent: null, head } } }
+  const observation = { manifest, manifestHead: manifestRevision(manifest), head, object: data }
+  const enrolled = enrollDevice('new')
+  const withObject = putObject(enrolled.objects, data)
+  const state = createPublication({ ledger: enrolled.ledger, manifest, objects: withObject.store })
+  assert.equal(state.ledger.bindings[key].base, null)
+  assert.throws(() => acknowledgeObservedEquality(createPublication({ ledger: enrolled.ledger, manifest }), { key, localBytes: data, observation }), /local immutable object unavailable/)
+  const stale = { ...manifest, conversations: { ...manifest.conversations, [otherKey]: { parent: null, head: digest('new conversation') } } }
+  assert.throws(() => acknowledgeObservedEquality(state, { key, localBytes: data, observation: { ...observation, manifest: stale, manifestHead: manifestRevision(stale) } }), /manifest/)
+  const committed = { ...state, pending: { key, stage: 'committed' } }
+  assert.throws(() => acknowledgeObservedEquality(committed, { key, localBytes: data, observation }), /pending/)
+  const result = acknowledgeObservedEquality(state, { key, localBytes: data, observation })
+  assert.equal(result.ledger.bindings[key].base, head)
+  assert.equal(state.ledger.bindings[key].base, null)
 })
 
 test('published baseline never authorizes overwriting a changed remote', () => {
