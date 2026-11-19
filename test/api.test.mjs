@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import test from 'node:test'
-import { apply } from '../lib/index.js'
+import { apply, assertLegacyPreviewSchema } from '../lib/index.js'
 
 function fixture({ reject = false } = {}) {
   const home = fs.mkdtempSync(path.join(process.cwd(), '.dsh-roaming-api-'))
@@ -33,6 +33,12 @@ function fixture({ reject = false } = {}) {
   }
   return { home, request, handler: registered, writes, dispose: () => fs.rmSync(home, { recursive: true, force: true }) }
 }
+
+test('v3 data protocol cannot be misread through quarantined legacy hosts reader', () => {
+  assert.throws(() => assertLegacyPreviewSchema({ version: '3', compatible: true }), (error) => error.code === 'unsupported-preview' && error.status === 409)
+  assert.doesNotThrow(() => assertLegacyPreviewSchema({ version: null, compatible: false }))
+  assert.throws(() => assertLegacyPreviewSchema({ version: '99', compatible: false }), /未知仓库协议/)
+})
 
 test('unsafe commands reject before touching native session persistence', async () => {
   const h = fixture()
