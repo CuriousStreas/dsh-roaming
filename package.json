@@ -1,18 +1,21 @@
 {
   "name": "dsh-roaming",
-  "version": "0.3.0-preview.0",
+  "version": "0.4.0-framework.0",
   "description": "Roam your DSH sessions and memory across machines via a git repository.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
     "./client": "./lib/client.js",
+    "./data": "./lib/portable-memory.js",
+    "./sync": "./lib/memory-sync.js",
     "./package.json": "./package.json"
   },
   "files": [
     "lib/",
     "cordis.patch.yml",
     "README.md",
+    "MEMORY_FORMAT.md",
     "LICENSE"
   ],
   "engines": {

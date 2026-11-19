@@ -12,3 +12,6 @@
 - insert:
     - id: roaming
       name: dsh-roaming
+      config:
+        mode: framework
+        sessionBridge: false
