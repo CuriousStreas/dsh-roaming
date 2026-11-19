@@ -59,6 +59,7 @@ test('preview clone stays shallow and only fast-forwards, never merges local div
   assert.equal(git(local, 'rev-parse', 'HEAD'), git(writer, 'rev-parse', 'HEAD'))
   fs.writeFileSync(path.join(local, 'local.txt'), 'unpublished')
   await repo.commitAll('local divergence')
+  await assert.rejects(repo.previewPull(), /preview HEAD differs from remote/)
   fs.writeFileSync(path.join(writer, 'remote.txt'), 'different revision\n')
   git(writer, 'add', '-A')
   git(writer, '-c', 'user.name=fixture', '-c', 'user.email=fixture@localhost', 'commit', '-m', 'conflicting')
