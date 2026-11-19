@@ -86,6 +86,18 @@ test('page aliases cannot retroactively change already detached events', async (
   assert.equal(mutable[0].data.message, 'changed later')
 })
 
+test('large event payload is rejected before retaining further pages', async () => {
+  const h = harness()
+  let reads = 0
+  h.persistence.open = async (id, access) => ({ id, access, header, inheritedEventCount: 0,
+    async read() { reads++; return { events: [{ seq: 0, type: 'fixture/event', time: 1, data: { text: 'X'.repeat(8 * 1024 * 1024) }, ignorable: true }] } },
+    async close() { h.calls.push(['close']) },
+  })
+  await assert.rejects(readEnrolledSnapshot({ persistence: h.persistence, ledger: h.ledger, key }), /bounded read/)
+  assert.equal(reads, 1)
+  assert.deepEqual(h.calls.at(-1), ['close'])
+})
+
 test('read failure or wrong access closes without mutation', async () => {
   for (const options of [{ readError: true }, { writable: true }, { closeError: true }]) {
     const h = harness(options)
