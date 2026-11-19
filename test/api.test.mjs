@@ -48,6 +48,19 @@ test('unsafe commands reject before touching native session persistence', async 
   } finally { h.dispose() }
 })
 
+test('missing connection service refuses even read-only API', async () => {
+  const h = fixture()
+  try {
+    let handler
+    apply({ webServer: { register: (spec) => { handler = spec.handler } }, effect: (cb) => cb() }, { home: h.home })
+    let status = null
+    const req = { method: 'POST', url: '/roaming/api' }
+    handler(req, { writeHead: (code) => { status = code }, end: () => {} })
+    await new Promise((done) => setImmediate(done))
+    assert.equal(status, 403)
+  } finally { h.dispose() }
+})
+
 test('state corruption denies operations without corrupting existing bytes', async () => {
   const h = fixture()
   try {
