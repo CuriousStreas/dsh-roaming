@@ -1,79 +1,28 @@
 # dsh-roaming
 
-让你的 DSH 会话和记忆，随你在不同机器之间「漫游」。
+> **安全预览版 `0.3.0-preview`，目前不能同步会话或记忆。** 不要为了尝试同步而安装到日常 DSH profile。本地旧版镜像和状态不自动迁移。
 
-用 **git 仓库** 作为介质，跨机器同步 **会话** 和 **记忆**。装上这个插件，你在机器 A 上聊的会话、攒下的记忆，机器 B 拉一下就到手。
+目标是通过 Git 数据仓库在设备间接续已授权的 DSH 会话；云端只存数据，压缩与数据协议版本检查仅属于本地镜像与数据仓库，不修改 DSH 原生会话格式。
 
-## ✨ 特性
+## 当前可做 / 不可做
 
-- **跨机器会话同步**：选择性上传会话，按内容指纹去重，拉取不重复、不反弹。
-- **记忆同步**：可选同步 `~/.mnemon/runtime/` 的记忆文件（`MEMORY.md` / `USER.md` / `memories.json`）。
-- **自动同步**：默认每小时自动拉取云端 + 推送已同步会话，间隔可调（1 分钟 ~ 7 天）。
-- **git 仓库介质**：一个仓库 = 一个用户，一台机器 = 一个主机目录，天然自带版本历史。
-- **校验 + 去重**：SHA-256 校验传输完整性；内容指纹（非 id）去重，防两台机器来回反弹。
+| 当前可以 | 当前禁止 |
+|---|---|
+| 列出本机会话元数据；克隆或拉取**隔离的 v3 数据镜像**，展示经 SHA-256 校验的旧仓库会话条目和错误清单 | 上传、导入、追加原生会话、修改 DSH 工作区或模型、记忆文件覆盖、自动同步、迁移旧版状态 |
 
-## 安装
+新状态在 `<DSH_HOME>/roaming/v3/`，完全不复用旧 `<DSH_HOME>/roaming/state.json` 或 `repo/`。启动时不自动网络访问。配置仓库时要求 clone 成功、原仓库 origin 与配置匹配；拉取失败不能用旧镜像冒充最新数据。仓库 `SCHEMA_VERSION` 是 roaming 数据协议版本，不是 DSH 会话版本；**预览旧版数据不表示允许写入**。
 
-```sh
-# 从 GitHub 装（推荐）
-dsh plugin add github:<you>/dsh-roaming
+`POST /roaming/api` 的 `status`、`listLocal`、`configure`、`pull`、`syncAll`（当前仅预览）、`openLogs` 可用。`push`、`pushMemory`、`pullMemory`、`pushConfig` 明确返回 `preview-only`；`settings` 不能打开自动同步。安装前还需完成 API 身份验证及隔离端到端测试。
 
-# 或本地开发（file: 拷贝，改了代码要重跑这条）
-dsh plugin add "file:D:/path/to/dsh-roaming"
-```
+## 重构路线与迁移闸门
 
-> ⚠️ **不要用 `link:` 安装**：DSH 的 client-modules 无法通过 SymbolicLink 发现插件的 Web UI，侧栏不会出现入口。
+1. 只读预览；先离线备份旧镜像、旧状态与云端仓库，不对历史做原地改写。旧镜像有未推送的 Git 历史，不能当云端已确认。
+2. 新仓库协议使用稳定 conversation key + 持久化用户明确选择的本地 session binding；完整内容摘要作共享基线。三路比较只接受相同修订/单边推进，双方变化保留两个 revision，不自动覆盖。新旧文件扩展名只是编码，不参与会话身份。
+3. 只有在临时 DSH profile 中验证可打开、可续聊、可再次导出后才开放导入；导入失败不写原生会话。真实会话必须是只读源，插件不能使用 `open(id,'write')` 更新原生会话。
+4. Git 拉取/推送和远端确认状态分开记录。记忆迁移走独立安全协议，不直接覆盖 Mnemon 运行态文件。
+5. 双机隔离测试包括未授权会话不上传、等长内容冲突、断网/推送拒绝、坏压缩包、历史会话、重复导入、活跃会话与附件；通过后才讨论安装到日常 profile。
 
-## 使用
-
-1. 建一个 **私有** git 仓库（记忆和会话是隐私），建议配 token。
-2. 装插件后，侧栏点 **「Roaming」** 入口，在面板里 **配置仓库** 填 URL。
-3. 会话列表里点 **「上传」**，把会话推到云端。
-4. 点 **「⟳ 全量同步」**（或等自动同步），把云端的会话拉到本机。
-
-## 仓库结构
-
-```
-<repo>/
-  memory/                 ← 记忆文件，全局一份（属于用户）
-    MEMORY.md / USER.md / memories.json
-  hosts/
-    <hostname-A>/         ← 每台机器一个目录
-      <sessionId>.json    ← 每个会话一个 wire-format JSON
-```
-
-## 工作原理
-
-复用 [dsh-session-sync](https://github.com/XXGxiaoyu/dsh-session-sync) 的导出/导入桥（SHA-256 校验、跨机 cwd 回退、seq 重索引、内容指纹去重），把它的「局域网 HTTP 传输层」换成 git 远程仓库。
-
-## GUI API（`POST /roaming/api`）
-
-| action | 参数 | 作用 |
-|---|---|---|
-| `status` | - | 配置与仓库状态 |
-| `configure` | `{ repoUrl }` | 设置远程仓库并 clone |
-| `listLocal` | - | 列出本地会话 |
-| `push` | `{ sessionIds: [] }` | 导出并推会话 |
-| `pull` | - | 拉取并导入会话 |
-| `syncAll` | - | 全量同步（pull + push 已同步会话） |
-| `settings` | `{ autoSync, autoSyncIntervalMs }` | 自动同步开关/间隔 |
-| `pushMemory` / `pullMemory` | - | 上传/下载记忆文件 |
-
-## 配置（loader 行 `config`）
-
-| Key | 默认 | 含义 |
-|---|---|---|
-| `repoUrl` | - | 远程仓库地址（也可运行时 configure） |
-| `home` | `$DSH_HOME` / `~/.dsh` | DSH 根目录 |
-| `mnemonHome` | `~/.mnemon` | mnemon 记忆目录 |
-| `syncRoot` | `<home>/roaming/workspaces` | 同步工作区根目录；每个主机一个子文件夹（`<syncRoot>/<host>`），子文件夹名即工作区标题。也支持 `syncDir`（旧名） |
-| `verbose` | `true` | 是否打印日志 |
-
-## 设计取舍（阶段 1）
-
-- **只做「顺序接力」**：两台机器别同时聊同一个会话再各自 push，并发分叉暂不处理。
-- **记忆同步是文件级**：只搬三个文件，不做语义合并，冲突由 git 合并（或较新时间戳覆盖）。
-- **凭据永不进仓库**：`.credentials.yaml` 不参与任何同步。
+测试（均在临时数据目录，不连接用户仓库）：`node test/safety.test.mjs`、`node test/revisions.test.mjs`、`node test/git.test.mjs`。某些受限 sandbox 阻止 Git 子进程，测试需在允许运行本地 Git 的隔离环境执行。此处不提供真实仓库升级或会话修复脚本。
 
 ## License
 

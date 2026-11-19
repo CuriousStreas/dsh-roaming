@@ -1,6 +1,6 @@
 {
   "name": "dsh-roaming",
-  "version": "0.2.7",
+  "version": "0.3.0-preview.0",
   "description": "Roam your DSH sessions and memory across machines via a git repository.",
   "type": "module",
   "main": "lib/index.js",
