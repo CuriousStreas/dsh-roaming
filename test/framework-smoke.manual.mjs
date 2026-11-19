@@ -28,8 +28,10 @@ try {
   assert.deepEqual((await B.workspace.load()).memories.preferences, memory.memories.preferences)
   // Same existing API surface can configure paths and read grouped data.
   const controller = applyFramework({ webServer: { register() {} }, effect: factory => factory() }, { home: path.join(root, 'ui-home') })
-  await controller.operate('configure', options('A'))
+  await controller.operate('configure', { ...options('A'), repoUrl: remoteUrl })
   assert.equal((await controller.operate('status')).mappingDir, options('A').mappingDir)
+  await controller.operate('push', {})
+  await controller.operate('pull', {})
   console.log('PASS data format + compression + Git upload/download + configurable paths')
 
   if (process.env.DSH_INSTALL_ROOT) {
