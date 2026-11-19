@@ -167,6 +167,27 @@ test('refuses concurrent remote update even with unchanged local manifest', asyn
   await assert.rejects(publishArtifact(options(f)), /diverged/)
   assert.equal(git(f.remote, 'rev-parse', 'HEAD'), git(writer, 'rev-parse', 'HEAD'))
 })
+test('rejects an over-limit object store before writing', async (t) => {
+  const f = fixture(t)
+  const writer = path.join(f.root, 'limit-writer')
+  git(f.root, 'clone', f.remote, writer)
+  const objects = path.join(writer, 'objects')
+  fs.mkdirSync(objects)
+  for (let index = 0; index < 256; index++) {
+    const data = Buffer.from(`object ${index}`)
+    fs.writeFileSync(path.join(objects, `${digest(data)}.bin`), data)
+  }
+  git(writer, 'add', 'objects')
+  git(writer, '-c', 'user.name=fixture', '-c', 'user.email=fixture@localhost', 'commit', '-m', 'fill store')
+  git(writer, 'push', 'origin', 'HEAD')
+  await f.repo.pull()
+  const before = git(f.remote, 'rev-parse', 'HEAD')
+  await assert.rejects(publishArtifact(options(f, Buffer.from('one extra'))), /exceeds limits/)
+  assert.equal(git(f.remote, 'rev-parse', 'HEAD'), before)
+  assert.equal(git(f.local, 'rev-parse', 'HEAD'), before)
+  assert.equal(fs.existsSync(path.join(f.local, 'objects', `${digest('one extra')}.bin`)), false)
+})
+
 test('bounds artifact and rejects unexpected repository files', async (t) => {
   const f = fixture(t)
   await assert.rejects(publishArtifact(options(f, Buffer.alloc(MAX_ARTIFACT_BYTES + 1))), /bounded/)

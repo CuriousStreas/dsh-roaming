@@ -14,7 +14,13 @@
 - 人工确认一条会话后分配稳定的 64 位十六进制 conversation key；每机器记录其 own local ID 和 `native-readonly` / `roaming-owned` 身份，不把设备名称/文件后缀当主键。默认本机会话均不入选。
 - 仓库 `SCHEMA_VERSION=3`，带 manifest：`conversations/<key> -> {head,parent}`。payload 用内容 SHA-256 寻址，压缩仅限 Git 数据镜像（当前实验性 `transport.js` 写的是未压缩 `.bin`，不能冒称已完成 zstd）。变更需要确认 `expected === 当前 head` 且 Git 更新可快进；远端确认后才提交本地基线。空基线不能猜单边变更。
 - 老插件不识别 v3 marker，因此**新仓库不要给旧版本插件写权限**；单靠文本版本文件不能隔离旧写入者。验证迁移用临时 repo/profile/工作区，不能在日常 GUI 内安装验证。
-- 本地 DSH 原始会话永不因同步被迁移、重写、重命名。当前 DSH 的公开 `session/fork` 只接受已存在本地的 session ID；公开 `/api/session.export` 可导出根日志、子会话与引用附件，但没有发现对等的任意 ZIP 导入 API。旧版手写 `create/append` 导入不能证明引用、marker、历史版本与附件可回放。因此跨机导入/续聊继续关闭，直到找到受支持的导入路径，或在独立 profile 对严格受限格式完成往返验证；没有安全接续能力时只保留可浏览的仓库数据。
+- 本地 DSH 原始会话永不因同步被迁移、重写、重命名。当前 DSH 的公开 `session/fork` 只接受已存在本地的 session ID；公开 `/api/session.export` 可导出根日志、子会话与已知字段引用的附件，但没有发现对等的任意 ZIP 导入 API。现有 ZIP 没有 manifest，序列化只写 header/events，**未携带 fork 所需的 `inheritedEventCount`**；未知插件事件内的附件引用不会保证采集，子会话逐条 flush/export 也不是原子快照。公开的附件 `saveImage` 可能重新编码而改变引用摘要；工作目录、模型、preset/tool 也可能无法移植。旧版手写 `create/append` 导入不能证明引用、marker、历史版本与附件可回放。因此跨机导入/续聊继续关闭，直到找到受支持的导入路径，或在独立 profile 对严格受限格式完成往返验证；没有安全接续能力时只保留可浏览的仓库数据。
+
+## 后续离线导入实验前置条件
+
+- 只能在新建 disposable `DSH_HOME` / 数据仓库中实验，源 profile 不能依靠 `open('write')` 或 `flush` 获取快照；原生会话导出必须显式授权单条 ID，并单独记录 `inheritedEventCount`、依赖会话及所有可验证的附件引用。
+- 对每个受限 fixture，先界定原始 SessionHeader / event seq / 内嵌引用与媒体摘要；完整校验后才尝试目标 profile 的 `create/append/flush`，中途失败须保留源字节、隔离目标、不向日常 GUI 注册。复开、回放、续聊、再次导出内容等价才可扩大支持格式；未知插件负载、非静止树或无法保持图片摘要一律拒绝。
+- 当前 Git 事务适配器仍在本地镜像上原地提交；远端拒绝推送会留下未确认提交。不得自动 reset/pull/merge 或伪报成功，必须改为独立 staging 仓库与可恢复事务，并封锁意外 push URL、目录软链接竞争及超大 Git 历史，再谈接入 API。
 
 ## 放行检查
 
