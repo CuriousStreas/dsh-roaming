@@ -85,6 +85,24 @@ test('pull failure is fatal and never logs credential-bearing Git diagnostics', 
   assert.deepEqual(logs, [])
 })
 
+test('empty unborn branch with no content does not report a pushed commit', async (t) => {
+  const { remote, repo } = fixture(t)
+  assert.equal(await repo.sync('empty'), 'no-changes')
+  assert.throws(() => git(remote, 'rev-parse', '--verify', 'HEAD'))
+})
+
+test('unavailable remote fails closed even with a pending local commit', async (t) => {
+  const { remote, local, repo } = fixture(t)
+  await repo.ensureRepo()
+  fs.writeFileSync(path.join(local, 'pending.txt'), 'pending')
+  assert.equal(await repo.commitAll('pending'), 'committed')
+  const unavailable = path.join(path.dirname(remote), 'unavailable.git')
+  fs.renameSync(remote, unavailable)
+  await assert.rejects(repo.sync('retry'), /inspect remote heads failed/)
+  fs.renameSync(unavailable, remote)
+  assert.throws(() => git(remote, 'rev-parse', '--verify', 'HEAD'))
+})
+
 test('retry pushes prior local commits despite no newly staged changes', async (t) => {
   const { remote, local, repo } = fixture(t)
   await repo.ensureRepo()
