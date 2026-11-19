@@ -38,6 +38,16 @@ function seed(root, remote, name = 'seed') {
   return writer
 }
 
+test('post-transfer quota rejects oversized mirror without representing remote as fresh', async (t) => {
+  const { root, remote, local } = fixture(t)
+  const writer = seed(root, remote)
+  const bounded = new GitRepo({ dir: local, remoteUrl: remote, maxMirrorBytes: 512 })
+  await assert.rejects(bounded.ensureRepo(), /disk quota/)
+  assert.equal(fs.existsSync(path.join(local, '.git')), true)
+  assert.equal(fs.readFileSync(path.join(writer, 'remote.txt'), 'utf8'), 'remote content\n')
+  await assert.rejects(bounded.pull(), /disk quota/)
+})
+
 test('empty remote clones and first sync creates content', async (t) => {
   const { remote, local, repo } = fixture(t)
   assert.equal(await repo.ensureRepo(), 'cloned')
