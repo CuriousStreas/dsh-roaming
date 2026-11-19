@@ -64,6 +64,35 @@ test('diagnostics never follow a plugin log symlink or unsafe root', async () =>
   } finally { h.cleanup() }
 })
 
+test('status rejects symlinked data-protocol marker without reading its target', async () => {
+  const h = harness()
+  try {
+    const root = path.join(h.home, 'roaming', 'v3')
+    const repo = path.join(root, 'repo')
+    fs.mkdirSync(path.join(repo, '.git'), { recursive: true })
+    fs.writeFileSync(path.join(root, 'state.json'), JSON.stringify({ deviceId: 'fixture', repoUrl: '', enrolled: {}, settings: { autoSync: false, syncMemory: false } }))
+    const victim = path.join(h.home, 'unrelated.txt')
+    fs.writeFileSync(victim, 'never read')
+    try { fs.symlinkSync(victim, path.join(repo, 'SCHEMA_VERSION'), 'file') }
+    catch (error) { if (error.code === 'EPERM') return; throw error }
+    let handler
+    h.ctx.webServer.register = ({ handler: value }) => { handler = value }
+    h.ctx.get = (name) => name === 'connection' ? { requestRejection: () => undefined } : undefined
+    apply(h.ctx, { home: h.home })
+    let status, body
+    const listeners = {}
+    const req = { method: 'POST', url: '/roaming/api', on(name, callback) { listeners[name] = callback; return this } }
+    handler(req, { writeHead(code) { status = code }, end(value) { body = JSON.parse(value) } })
+    listeners.data(Buffer.from('{"action":"status"}'))
+    listeners.end()
+    for (let i = 0; body === undefined && i < 20; i++) await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(status, 500)
+    assert.equal(body.ok, false)
+    assert.equal(fs.readFileSync(victim, 'utf8'), 'never read')
+    assert.equal(h.calls.write, 0)
+  } finally { h.cleanup() }
+})
+
 test('malformed v3 state fails closed instead of resetting bindings', async () => {
   const h = harness()
   try {

@@ -10,7 +10,7 @@
 |---|---|
 | 克隆或拉取**隔离的 v3 数据镜像**，展示经 SHA-256 校验的仓库会话条目和错误清单 | 扫描原生会话、上传、导入、追加、修改 DSH 工作区或模型、记忆文件覆盖、自动同步、迁移旧版状态 |
 
-新状态在 `<DSH_HOME>/roaming/v3/`，完全不复用旧 `<DSH_HOME>/roaming/state.json` 或 `repo/`。启动时不自动网络访问。配置仓库时要求 clone 成功、原仓库 origin 与配置匹配；拉取失败不能用旧镜像冒充最新数据。仓库 `SCHEMA_VERSION` 是 roaming 数据协议版本，不是 DSH 会话版本；**预览旧版数据不表示允许写入**。
+新状态在 `<DSH_HOME>/roaming/v3/`，完全不复用旧 `<DSH_HOME>/roaming/state.json` 或 `repo/`。启动时不自动网络访问。预览数据的 `SCHEMA_VERSION` 标记和条目必须是镜像内的普通文件，软链接/重解析跳转拒绝读取；该同步预览对同时发生的本地目录替换仍不是强原子沙箱，不应用于敌对共用工作目录。配置仓库时要求 clone 成功、原仓库 origin 与配置匹配；拉取失败不能用旧镜像冒充最新数据。仓库 `SCHEMA_VERSION` 是 roaming 数据协议版本，不是 DSH 会话版本；**预览旧版数据不表示允许写入**。
 
 `POST /roaming/api` 的 `status`、`listLocal`（空列表）、`configure`、`pull`、`syncAll`（当前仅预览）、`openLogs` 可用。`push`、`pushMemory`、`pullMemory`、`pushConfig` 明确返回 `preview-only`；`settings` 不能打开自动同步。API 必须由 DSH connection 服务验证身份，缺失时拒绝请求；安装前仍需完成真实 Host 的 API 路由及隔离端到端测试。
 
