@@ -67,6 +67,23 @@ test('preview clone stays shallow and only fast-forwards, never merges local div
   assert.equal(fs.existsSync(path.join(local, 'local.txt')), true)
 })
 
+test('preview refuses modified, untracked and ignored worktree content', async (t) => {
+  const { root, remote, local } = fixture(t)
+  seed(root, remote)
+  const repo = new GitRepo({ dir: local, remoteUrl: remote })
+  await repo.ensurePreviewRepo()
+  const tracked = path.join(local, 'remote.txt')
+  fs.writeFileSync(tracked, 'locally changed')
+  await assert.rejects(repo.previewPull(), /preview mirror is dirty/)
+  git(local, 'checkout', '--', 'remote.txt')
+  fs.writeFileSync(path.join(local, 'untracked.txt'), 'local only')
+  await assert.rejects(repo.previewPull(), /preview mirror is dirty/)
+  fs.rmSync(path.join(local, 'untracked.txt'))
+  fs.writeFileSync(path.join(local, '.gitignore'), 'ignored.txt\n')
+  fs.writeFileSync(path.join(local, 'ignored.txt'), 'local only')
+  await assert.rejects(repo.previewPull(), /preview mirror is dirty/)
+})
+
 test('post-transfer quota rejects oversized mirror without representing remote as fresh', async (t) => {
   const { root, remote, local } = fixture(t)
   const writer = seed(root, remote)
