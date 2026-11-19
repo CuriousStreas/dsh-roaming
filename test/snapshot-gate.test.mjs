@@ -39,6 +39,9 @@ test('rejects forked ZIP without exact inherited cut, changed event seq, and med
   assert.throws(() => inspectSnapshotCandidate(candidate({ events: [{ ...events[0], data: { extra } }] })), /lossless JSON/)
   assert.throws(() => inspectSnapshotCandidate(candidate({ events: [{ ...events[0], data: { numeric: NaN } }] })), /lossless JSON/)
   assert.throws(() => inspectSnapshotCandidate(candidate({ events: [{ ...events[0], data: { content: [{ type: 'image', attachment: { attachmentId: 'missing' } }] } }] })), /embedded media/)
+  for (const block of [{ type: 'image', attachmentId: 'missing' }, { type: 'file' }, { attachmentId: 'detached' }]) {
+    assert.throws(() => inspectSnapshotCandidate(candidate({ events: [{ ...events[0], data: { content: [block] } }] })), /embedded media/)
+  }
   assert.throws(() => inspectSnapshotCandidate(candidate({ header: { ...header, version: 2 } })), /header\/version/)
   assert.throws(() => inspectSnapshotCandidate(candidate({ header: { ...header, createdAt: undefined } })), /header\/version/)
   assert.throws(() => inspectSnapshotCandidate(candidate({ events: [{ ...events[0], time: undefined }] })), /seq and envelope/)
