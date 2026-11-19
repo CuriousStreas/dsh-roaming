@@ -10,10 +10,11 @@ import { pathToFileURL } from 'node:url'
 const install = process.env.DSH_INSTALL_ROOT
 if (!install || !path.isAbsolute(install)) throw new Error('DSH_INSTALL_ROOT must be an absolute DSH package directory')
 const moduleUrl = (name) => pathToFileURL(path.join(install, 'node_modules', '@deepseek-ai', name, 'lib', 'index.js')).href
-const [{ Context }, Jsonl, { Session, SessionId }] = await Promise.all([
+const [{ Context }, Jsonl, { Session, SessionId }, { createUserMessage }] = await Promise.all([
   import(pathToFileURL(path.join(install, 'node_modules', '@deepseek-ai', 'cordis', 'lib', 'index.js')).href),
   import(moduleUrl('dsh-session-persistence-jsonl')),
   import(moduleUrl('dsh-session')),
+  import(moduleUrl('dsh-llm')),
 ])
 const home = await fs.mkdtemp(path.join(os.tmpdir(), 'dsh-roaming-native-fixture-'))
 let fiber
@@ -27,6 +28,9 @@ try {
   const session = Session.create(id)
   const events = [
     session.append('turn/start', { turn: 1 }),
+    session.append('step/start', { turn: 1, step: 1 }),
+    session.append('user/message', createUserMessage({ content: [{ type: 'text', text: 'synthetic test only' }], source: { kind: 'user' } }), { surfaceOp: 'append' }),
+    session.append('step/end', { turn: 1, step: 1 }),
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } }),
     session.append('session/end-seed', {}),
   ]
@@ -48,6 +52,9 @@ try {
   assert.equal(extracted.snapshot.header.id, id)
   const fromSnapshot = Session.fromRestore(id, extracted.snapshot.events, extracted.snapshot.header, extracted.snapshot.inheritedEventCount, 'detached')
   assert.equal(fromSnapshot.seq, events.length)
+  const expectedSurface = session.deriveMessages()
+  assert.equal(expectedSurface.length, 1)
+  assert.deepEqual(fromSnapshot.deriveMessages(), expectedSurface)
   // An unbound key must not even call the backend. This also demonstrates
   // that validation is not a permission to discover other native sessions.
   await assert.rejects(readEnrolledSnapshot({ persistence: {
@@ -60,7 +67,8 @@ try {
     const result = await read.read()
     const replay = Session.fromRestore(id, result.events, read.header, read.inheritedEventCount, result.eventState)
     assert.equal(replay.seq, result.events.length)
-    assert.deepEqual(result.events.map((event) => event.seq), [0, 1, 2])
+    assert.deepEqual(replay.deriveMessages(), expectedSurface)
+    assert.deepEqual(result.events.map((event) => event.seq), [0, 1, 2, 3, 4, 5])
     assert.equal(read.header.id, id)
     console.log(JSON.stringify({ isolated: true, syntheticEvents: result.events.length, restoredEvents: replay.seq }))
   } finally { await read.close() }
