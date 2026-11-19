@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createLedger, enroll } from '../lib/ledger.js'
 import { readEnrolledSnapshot } from '../lib/read-only-snapshot.js'
+import { digest } from '../lib/revisions.js'
 
 const key = 'a'.repeat(64)
 const header = { id: 'local-one', version: 4, createdAt: 1, isSeeded: false }
@@ -30,11 +31,12 @@ test('reads only explicitly enrolled session in bounded pages and closes read ha
   const h = harness()
   const result = await readEnrolledSnapshot({ persistence: h.persistence, ledger: h.ledger, key })
   assert.equal(result.eventCount, events.length)
+  assert.equal(digest(Buffer.from(JSON.stringify(result.snapshot))), result.revision)
   assert.equal(result.snapshot.events[299].seq, 299)
   assert.deepEqual(h.calls.filter(([op]) => op === 'open'), [['open', 'local-one', 'read']])
   assert.deepEqual(h.calls.filter(([op]) => op === 'read'), [['read', 0, 256], ['read', 256, 256], ['read', 300, 256]])
-  assert.deepEqual(h.calls.filter(([op]) => op === 'stat').length, 3)
-  assert.deepEqual(h.calls.at(-1), ['close'])
+  assert.deepEqual(h.calls.filter(([op]) => op === 'stat').length, 4)
+  assert.deepEqual(h.calls.at(-2), ['close'])
   assert.notEqual(result.snapshot.events[0], events[0])
 })
 
@@ -48,6 +50,40 @@ test('missing enrollment cannot open any source; changed source never produces a
   const changedLater = harness({ changedAfterSerialization: true })
   await assert.rejects(readEnrolledSnapshot({ persistence: changedLater.persistence, ledger: changedLater.ledger, key }), /source changed/)
   assert.deepEqual(changedLater.calls.at(-1), ['close'])
+  const changedOnClose = harness()
+  const originalOpen = changedOnClose.persistence.open
+  let revision = 'stable'
+  changedOnClose.persistence.stat = async () => ({ revision })
+  changedOnClose.persistence.open = async (id, access) => {
+    const handle = await originalOpen(id, access)
+    handle.close = async () => { revision = 'changed'; changedOnClose.calls.push(['close']) }
+    return handle
+  }
+  await assert.rejects(readEnrolledSnapshot({ persistence: changedOnClose.persistence, ledger: changedOnClose.ledger, key }), /closing read handle/)
+  assert.deepEqual(changedOnClose.calls.at(-1), ['close'])
+})
+
+test('inherited prototype binding cannot authorize any persistence access', async () => {
+  const h = harness()
+  const forged = { format: 1, deviceId: 'A', bindings: Object.create({ [key]: h.ledger.bindings[key] }) }
+  await assert.rejects(readEnrolledSnapshot({ persistence: h.persistence, ledger: forged, key }), /ledger|enrollment/)
+  assert.deepEqual(h.calls, [])
+})
+
+test('page aliases cannot retroactively change already detached events', async () => {
+  const h = harness()
+  const mutable = [{ seq: 0, time: 1, type: 'fixture/event', data: { message: 'original' }, ignorable: true }]
+  h.persistence.open = async (id, access) => ({ id, access, header, inheritedEventCount: 0,
+    async read(offset) {
+      if (offset === 0) return { events: mutable }
+      mutable[0].data.message = 'changed later'
+      return { events: [] }
+    },
+    async close() { h.calls.push(['close']) },
+  })
+  const result = await readEnrolledSnapshot({ persistence: h.persistence, ledger: h.ledger, key })
+  assert.equal(result.snapshot.events[0].data.message, 'original')
+  assert.equal(mutable[0].data.message, 'changed later')
 })
 
 test('read failure or wrong access closes without mutation', async () => {

@@ -9,6 +9,8 @@ test('enrollment creates one stable conversation identity and read-only ownershi
   let ledger = enroll(createLedger('device-A'), { key, localId: 'session-a' })
   assert.equal(ledger.bindings[key].owner, 'native-readonly')
   assert.equal(ledger.bindings[key].base, null)
+  const inherited = { format: 1, deviceId: 'A', bindings: Object.create({ [key]: ledger.bindings[key] }) }
+  assert.throws(() => decide(inherited, key, { local: a, remote: b }), /invalid ledger/)
   assert.equal(decide(ledger, key, { local: a, remote: b }), 'unbound-conflict')
   assert.throws(() => enroll(ledger, { key: 'a'.repeat(64), localId: 'session-a' }), /already exists/)
   assert.throws(() => enroll(ledger, { key: 'a'.repeat(64), localId: 'session-b', owner: 'roaming-owned' }), /may not claim/)
