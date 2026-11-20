@@ -30,9 +30,27 @@ try {
   const controller = applyFramework({ webServer: { register() {} }, effect: factory => factory() }, { home: path.join(root, 'ui-home') })
   await controller.operate('configure', { ...options('A'), repoUrl: remoteUrl })
   assert.equal((await controller.operate('status')).mappingDir, options('A').mappingDir)
-  await controller.operate('push', {})
-  await controller.operate('pull', {})
-  console.log('PASS data format + compression + Git upload/download + configurable paths')
+  const synced = await controller.operate('sync')
+  assert.equal(synced.uploaded, true)
+  assert.equal(synced.partial, false)
+  const status = await controller.operate('status')
+  assert.equal(status.lastSync.message, '同步完成')
+  const log = await fs.readFile(status.logPath, 'utf8')
+  assert.ok(log.includes('"stage":"fetch"') && log.includes('"stage":"complete"'))
+
+  // The same button handles old repositories honestly, without migrating them.
+  const legacy = path.join(root, 'legacy-source')
+  execFileSync('git', ['init', '-b', 'main', legacy], { stdio: 'ignore' })
+  await fs.mkdir(path.join(legacy, 'hosts', 'old-pc'), { recursive: true })
+  await fs.writeFile(path.join(legacy, 'hosts', 'old-pc', 'machine.json'), JSON.stringify({ name: 'old-pc' }))
+  execFileSync('git', ['-C', legacy, 'add', '.'], { stdio: 'ignore' })
+  execFileSync('git', ['-C', legacy, '-c', 'user.name=fixture', '-c', 'user.email=fixture@invalid', 'commit', '-m', 'legacy fixture'], { stdio: 'ignore' })
+  const oldHead = await fs.readFile(path.join(legacy, '.git', 'refs', 'heads', 'main'), 'utf8')
+  const old = createMemorySync({ ...options('legacy'), remoteUrl: legacy })
+  const oldSync = await old.sync()
+  assert.ok(oldSync.readOnly && oldSync.partial && !oldSync.uploaded)
+  assert.equal(await fs.readFile(path.join(legacy, '.git', 'refs', 'heads', 'main'), 'utf8'), oldHead)
+  console.log('PASS one-button sync + stage logs + legacy read-only result')
 
   if (process.env.DSH_INSTALL_ROOT) {
     const install = process.env.DSH_INSTALL_ROOT
