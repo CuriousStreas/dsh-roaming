@@ -45,12 +45,14 @@ try {
   await fs.writeFile(path.join(legacy, 'hosts', 'old-pc', 'machine.json'), JSON.stringify({ name: 'old-pc' }))
   execFileSync('git', ['-C', legacy, 'add', '.'], { stdio: 'ignore' })
   execFileSync('git', ['-C', legacy, '-c', 'user.name=fixture', '-c', 'user.email=fixture@invalid', 'commit', '-m', 'legacy fixture'], { stdio: 'ignore' })
-  const oldHead = await fs.readFile(path.join(legacy, '.git', 'refs', 'heads', 'main'), 'utf8')
-  const old = createMemorySync({ ...options('legacy'), remoteUrl: legacy })
+  const legacyRemote = path.join(root, 'legacy.git')
+  execFileSync('git', ['clone', '--bare', legacy, legacyRemote], { stdio: 'ignore' })
+  const old = createMemorySync({ ...options('legacy'), remoteUrl: legacyRemote })
   const oldSync = await old.sync()
-  assert.ok(oldSync.readOnly && oldSync.partial && !oldSync.uploaded)
-  assert.equal(await fs.readFile(path.join(legacy, '.git', 'refs', 'heads', 'main'), 'utf8'), oldHead)
-  console.log('PASS one-button sync + stage logs + legacy read-only result')
+  assert.ok(!oldSync.readOnly && !oldSync.partial && oldSync.uploaded)
+  await fs.access(path.join(options('legacy').repoDir, '.roaming-index.json'))
+  await assert.rejects(fs.access(path.join(options('legacy').repoDir, 'memory-repository.json')))
+  console.log('PASS one-button sync + stage logs + existing-format write-back')
 
   if (process.env.DSH_INSTALL_ROOT) {
     const install = process.env.DSH_INSTALL_ROOT
@@ -74,6 +76,7 @@ try {
       source.append('user/message', createUserMessage({ content: [{ type: 'text', text: 'synthetic user' }], source: { kind: 'user' } }), { surfaceOp: 'append' }),
       source.append('step/end', { turn: 1, step: 1 }),
       source.append('turn/end', { turn: 1, reason: { kind: 'completed' } }),
+      source.append('session-log-deepseek/delivery-accepted', { sessionId: source.header.id, sessionFormatVersion: 4, throughSeq: 2 }),
       source.append('session/end-seed', {}),
     ]
     const write = await nativeA.create(source.header)
@@ -81,9 +84,11 @@ try {
     const original = (await nativeA.stat(source.header.id)).revision
     const bridgeA = createDshBridge({ persistence: nativeA, machineId: 'A' })
     const bridgeB = createDshBridge({ persistence: nativeB, machineId: 'B' })
-    A = createMemorySync({ ...options('A'), bridge: bridgeA })
-    B = createMemorySync({ ...options('B'), bridge: bridgeB })
-    await bridgeA.enroll(source.header.id, A.workspace, options('A'))
+    const nativeOptions = id => ({ ...options(`native-${id}`), machineId: id, machineName: `Machine ${id}`, remoteUrl: legacyRemote })
+    A = createMemorySync({ ...nativeOptions('A'), bridge: bridgeA })
+    B = createMemorySync({ ...nativeOptions('B'), bridge: bridgeB })
+    await A.workspace.save(memory)
+    await bridgeA.enroll(source.header.id, A.workspace, nativeOptions('A'))
     assert.ok((await A.workspace.list(await A.workspace.load()))[0].hidden)
     await A.upload()
     const downloaded = await B.download()
@@ -94,6 +99,7 @@ try {
     const mapped = await nativeB.open(mappedId, 'read')
     try {
       const { events: restoredEvents, eventState } = await mapped.read()
+      assert.equal(restoredEvents.find(event => event.type === 'session-log-deepseek/delivery-accepted').data.sessionId, mappedId)
       const restored = Session.fromRestore(mappedId, restoredEvents, mapped.header, mapped.inheritedEventCount, eventState)
       assert.deepEqual(restored.deriveMessages(), source.deriveMessages())
     } finally { await mapped.close() }
@@ -147,7 +153,8 @@ try {
     await B.upload()
     const pending = await A.download()
     assert.equal(pending.materialized.pendingNative.length, 1)
-    await assert.rejects(A.upload(), /尚未写回/)
+    const retained = await A.upload()
+    assert.ok(retained.partial && retained.failed.some(item => /尚未写回/.test(item.message)))
     assert.equal((await nativeA.stat(source.header.id)).revision, editedOriginal)
     console.log('PASS native hidden binding + foreign import + repeat download + conversation split/rebinding + pending writeback retained')
   } else console.log('SKIP native bridge (set DSH_INSTALL_ROOT to opt in)')

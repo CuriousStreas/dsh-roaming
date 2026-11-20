@@ -14,4 +14,4 @@
       name: dsh-roaming
       config:
         mode: framework
-        sessionBridge: false
+        sessionBridge: true
