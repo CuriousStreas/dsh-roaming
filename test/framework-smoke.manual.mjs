@@ -8,6 +8,7 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createMemorySync } from '../lib/memory-sync.js'
 import { createDshBridge } from '../lib/dsh-bridge.js'
+import { contentRevision } from '../lib/portable-memory.js'
 import { applyFramework } from '../lib/framework.js'
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'memory-framework-'))
@@ -162,18 +163,28 @@ try {
     await B.download()
     assert.equal((await nativeB.list()).length, 2)
     assert.equal((await nativeA.stat(source.header.id)).revision, editedOriginal)
-    // One-sided remote continuation for A's original stays pending: never
-    // overwrite it on a later upload before native writeback is implemented.
+    // One-sided remote continuation is appended to A's bound native original;
+    // the pre-existing history must stay byte-identical and repeats must not add
+    // a second copy of the same turn.
     const activeKey = Object.keys((await B.workspace.load()).conversations).find(key => !(key.includes('~remote-')))
     const rebound = (await B.workspace.bindings())[activeKey].localId
     await addTurn(nativeB, rebound, 'remote continuation for A')
     await B.upload()
-    const pending = await A.download()
-    assert.equal(pending.materialized.pendingNative.length, 1)
-    const retained = await A.upload()
-    assert.ok(retained.partial && retained.failed.some(item => /尚未写回/.test(item.message)))
-    assert.equal((await nativeA.stat(source.header.id)).revision, editedOriginal)
-    console.log('PASS native hidden binding + foreign import + repeat download + conversation split/rebinding + pending writeback retained')
+    const applied = await A.download()
+    assert.equal(applied.materialized.writtenBack.length, 1)
+    assert.equal(applied.materialized.pendingNative.length, 0)
+    assert.ok(applied.partial === false)
+    const grown = await nativeA.open(source.header.id, 'read')
+    try {
+      const { events: now } = await grown.read()
+      assert.ok(now.length > events.length)
+      assert.equal(contentRevision(now.slice(0, events.length)), contentRevision(events))
+      assert.ok(JSON.stringify(now).includes('remote continuation for A'))
+    } finally { await grown.close() }
+    const repeat = await A.download()
+    assert.equal(repeat.materialized.writtenBack.length, 0)
+    assert.equal(repeat.materialized.pendingNative.length, 0)
+    console.log('PASS native hidden binding + foreign import + repeat download + conversation split/rebinding + append-only writeback')
   } else console.log('SKIP native bridge (set DSH_INSTALL_ROOT to opt in)')
 } finally {
   try { for (const fiber of fibers.reverse()) await fiber.dispose() }

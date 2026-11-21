@@ -15,3 +15,5 @@
       config:
         mode: framework
         sessionBridge: true
+        # 本机原始对话只做受控追加回写；冲突始终保留双方副本。
+        nativeWriteback: true
