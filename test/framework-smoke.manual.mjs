@@ -27,16 +27,33 @@ try {
   await B.download()
   assert.deepEqual((await B.workspace.load()).memories.preferences, memory.memories.preferences)
   // Same existing API surface can configure paths and read grouped data.
-  const controller = applyFramework({ webServer: { register() {} }, effect: factory => factory() }, { home: path.join(root, 'ui-home') })
+  let apiRoute
+  const controller = applyFramework({ webServer: { register(route) { apiRoute = route } }, connection: { requestRejection() {} }, effect: factory => factory() }, { home: path.join(root, 'ui-home') })
   await controller.operate('configure', { ...options('A'), repoUrl: remoteUrl })
   assert.equal((await controller.operate('status')).mappingDir, options('A').mappingDir)
-  const synced = await controller.operate('sync')
-  assert.equal(synced.uploaded, true)
-  assert.equal(synced.partial, false)
+  const response = await new Promise(resolve => {
+    let httpStatus
+    apiRoute.handler({ method: 'POST', url: '/roaming/api', async *[Symbol.asyncIterator]() { yield Buffer.from(JSON.stringify({ action: 'sync' })) } },
+      { writeHead(code) { httpStatus = code }, end(body) { resolve({ status: httpStatus, body: JSON.parse(body) }) } })
+  })
+  assert.equal(response.status, 202)
+  assert.equal(response.body.accepted, true)
+  assert.equal(response.body.syncState.state, 'running')
+  const duplicate = await controller.operate('sync')
+  assert.equal(duplicate.accepted, false)
+  assert.equal(duplicate.syncState.runId, response.body.syncState.runId)
+  await controller.runHourly() // Same queue, not another concurrent writer.
+  const completed = await controller.whenIdle()
+  assert.equal(completed.state, 'succeeded')
+  assert.equal(completed.result.uploaded, true)
+  assert.equal(completed.result.partial, false)
   const status = await controller.operate('status')
   assert.equal(status.lastSync.message, '同步完成')
+  assert.equal(status.autoSync.intervalMs, 3600000)
   const log = await fs.readFile(status.logPath, 'utf8')
   assert.ok(log.includes('"stage":"fetch"') && log.includes('"stage":"complete"'))
+  assert.equal((log.match(/"stage":"start"/g) || []).length, 1)
+  controller.dispose()
 
   // The same button handles old repositories honestly, without migrating them.
   const legacy = path.join(root, 'legacy-source')
